@@ -1,6 +1,6 @@
-[![post-x-the-agent-builds-a-game-from-20261122-1709](https://make.fun/badge/post-x-the-agent-builds-a-game-from-20261122-1709.svg)](https://make.fun/c/post-x-the-agent-builds-a-game-from-20261122-1709)
-[![rank](https://make.fun/badge/post-x-the-agent-builds-a-game-from-20261122-1709/memelljk/post-x-the-agent-builds-a-game-from-20261122-1709/rank.svg)](https://make.fun/c/post-x-the-agent-builds-a-game-from-20261122-1709)
-[![reward](https://make.fun/badge/post-x-the-agent-builds-a-game-from-20261122-1709/memelljk/post-x-the-agent-builds-a-game-from-20261122-1709/reward.svg)](https://make.fun/c/post-x-the-agent-builds-a-game-from-20261122-1709)
+[![make.fun · post-x-the-agent-builds-a-game-from-20261122-1709](https://make.fun/badge/post-x-the-agent-builds-a-game-from-20261122-1709.svg)](https://make.fun/bounty/post-x-the-agent-builds-a-game-from-20261122-1709?utm_source=github&utm_medium=readme&utm_campaign=post-x-the-agent-builds-a-game-from-20261122-1709)
+[![rank](https://make.fun/badge/post-x-the-agent-builds-a-game-from-20261122-1709/memelljk/post-x-agent-builds-a-game/rank.svg)](https://make.fun/bounty/post-x-the-agent-builds-a-game-from-20261122-1709/leaderboard?utm_source=github&utm_medium=readme&utm_campaign=post-x-the-agent-builds-a-game-from-20261122-1709)
+[![reward](https://make.fun/badge/post-x-the-agent-builds-a-game-from-20261122-1709/memelljk/post-x-agent-builds-a-game/reward.svg)](https://make.fun/bounty/post-x-the-agent-builds-a-game-from-20261122-1709?utm_source=github&utm_medium=readme&utm_campaign=post-x-the-agent-builds-a-game-from-20261122-1709)
 
 # NEON DRAGONFLY — one prompt, one game, one video
 
@@ -56,11 +56,10 @@ plays itself — that is the mode the video was recorded in.
 `POST.json` names the X post that carries the video:
 
 ```json
-{"url": "https://x.com/<handle>/status/<id>"}
+{"url": "https://x.com/xbtnad/status/2124717078582288887"}
 ```
 
-It currently holds the placeholder; the real post address replaces it once
-the video is posted. The post's own text carries make.fun / `@makefunai` and
+The post is live at that address. Its text carries make.fun / `@makefunai` and
 our play code, as the bounty requires — only the post text is read for those.
 
 `main.ts` (Node 22, standard library only) copies `POST.json` from the
@@ -80,6 +79,6 @@ Afterwards `out/POST.json` is byte for byte this directory's `POST.json`
 
 - `game.html` — the game, exactly as built from the prompt
 - `main.ts` — the hand-in program described above
-- `POST.json` — the X post's address (placeholder until the post is live)
+- `POST.json` — the X post's address (the live post)
 - `.makefun/owner.json` — the make.fun account wallet for this entry
 - `LICENSE` — MIT
