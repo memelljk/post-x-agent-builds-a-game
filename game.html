@@ -1,0 +1,262 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>NEON DRAGONFLY</title>
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; }
+  html,body { background:#07031a; height:100%; overflow:hidden; font-family:ui-monospace,Menlo,Consolas,monospace; }
+  #wrap { display:flex; align-items:center; justify-content:center; height:100%; }
+  canvas { display:block; width:min(100vw,56.25vh); height:min(177.78vw,100vh); background:#0a0530; touch-action:none; }
+</style>
+</head>
+<body>
+<div id="wrap"><canvas id="cv" width="540" height="960"></canvas></div>
+<script>
+"use strict";
+// NEON DRAGONFLY — weave through the storm gates, dodge the thunderheads, dash to score.
+// One file, no dependencies. Keyboard: arrows / WASD move, Space or Shift = dash.
+// Touch: drag to steer, double-tap (or press DASH button) to dash. Demo: ?demo=1
+const cv = document.getElementById('cv');
+const ctx = cv.getContext('2d');
+const W = 540, H = 960;
+const DEMO = new URLSearchParams(location.search).get('demo') === '1';
+
+const keys = {};
+addEventListener('keydown', e => { keys[e.key.toLowerCase()] = true; if (e.key === ' ') e.preventDefault(); });
+addEventListener('keyup',   e => { keys[e.key.toLowerCase()] = false; });
+
+let touch = null, touchAt = 0, dashTap = false;
+cv.addEventListener('pointerdown', e => {
+  const r = cv.getBoundingClientRect();
+  const x = (e.clientX - r.left) * W / r.width, y = (e.clientY - r.top) * H / r.height;
+  const now = performance.now();
+  if (now - touchAt < 280) dashTap = true;
+  touchAt = now; touch = { x, y };
+});
+cv.addEventListener('pointermove', e => {
+  if (!touch) return;
+  const r = cv.getBoundingClientRect();
+  touch = { x: (e.clientX - r.left) * W / r.width, y: (e.clientY - r.top) * H / r.height };
+});
+addEventListener('pointerup', () => { touch = null; });
+
+// ---- game state ----
+const P = { x: W/2, y: H*0.72, vx: 0, vy: 0, r: 17, dash: 0, dashCd: 0, trail: [] };
+let gates = [], clouds = [], sparks = [], rain = [];
+let score = 0, best = 0, speed = 3.1, frame = 0, shake = 0, flash = 0, over = false, overAt = 0;
+let nextGate = 0, nextCloud = 0;
+
+for (let i = 0; i < 90; i++) rain.push({ x: Math.random()*W, y: Math.random()*H, s: 9 + Math.random()*14 });
+
+function reset() {
+  P.x = W/2; P.y = H*0.72; P.vx = 0; P.vy = 0; P.dash = 0; P.dashCd = 0; P.trail.length = 0;
+  gates = []; clouds = []; sparks = []; score = 0; speed = 3.1; frame = 0; shake = 0; flash = 0;
+  over = false; nextGate = 30; nextCloud = 130;
+}
+function spawnGate() {
+  const gapW = 150 + Math.random()*40, cx = 90 + Math.random()*(W-180);
+  gates.push({ y: -30, cx, gapW, passed: false, hue: 160 + Math.random()*80 });
+}
+function spawnCloud() {
+  clouds.push({ x: 50 + Math.random()*(W-100), y: -60, r: 30 + Math.random()*26,
+                vx: (Math.random()-0.5)*0.7, ph: Math.random()*6.28, bolt: 0 });
+}
+function burst(x, y, col, n) {
+  for (let i = 0; i < n; i++) {
+    const a = Math.random()*6.28, s = 1 + Math.random()*4;
+    sparks.push({ x, y, vx: Math.cos(a)*s, vy: Math.sin(a)*s, life: 22 + Math.random()*18, col });
+  }
+}
+
+// ---- demo autopilot: aim at the next gate gap, dodge the nearest cloud ----
+function demoInput() {
+  let tx = W/2, ty = H*0.72;
+  let g = gates.filter(g => g.y < P.y + 10).sort((a,b) => b.y - a.y)[0];
+  if (g) tx = g.cx;
+  let danger = null, dMin = 1e9;
+  for (const c of clouds) {
+    const d = Math.hypot(c.x - P.x, c.y - P.y);
+    if (c.y < P.y + 30 && d < dMin) { dMin = d; danger = c; }
+  }
+  if (danger && dMin < 170) tx = P.x + (P.x < danger.x ? -150 : 150);
+  tx = Math.max(40, Math.min(W-40, tx));
+  P.vx += (tx - P.x) * 0.006; P.vy += (ty - P.y) * 0.01;
+  if (g && Math.abs(g.y - P.y) < 190 && Math.abs(g.cx - P.x) < 46 && P.dashCd <= 0) P.dash = 14;
+}
+
+function step() {
+  frame++;
+  if (over) { if (frame - overAt > 110) reset(); }
+  if (!over) {
+    // input
+    const acc = 0.55;
+    if (DEMO) demoInput();
+    else {
+      if (keys['arrowleft']  || keys['a']) P.vx -= acc;
+      if (keys['arrowright'] || keys['d']) P.vx += acc;
+      if (keys['arrowup']    || keys['w']) P.vy -= acc;
+      if (keys['arrowdown']  || keys['s']) P.vy += acc;
+      if (touch) { P.vx += (touch.x - P.x) * 0.012; P.vy += (touch.y - P.y) * 0.012; }
+      if ((keys[' '] || keys['shift'] || dashTap) && P.dashCd <= 0) P.dash = 14;
+    }
+    dashTap = false;
+    if (P.dashCd > 0) P.dashCd--;
+    if (P.dash > 0) {
+      P.dash--; P.dashCd = Math.max(P.dashCd, 4);
+      score += 2; speed += 0.012;
+      if (frame % 2 === 0) burst(P.x, P.y + 16, '#ffd94d', 2);
+    } else if (P.dashCd === 0 && DEMO && frame % 200 === 0) { /* autopilot decides */ }
+    if (P.dash === 0 && P.dashCd <= 4) P.dashCd = 0;
+    P.vx *= 0.90; P.vy *= 0.90;
+    const maxV = P.dash > 0 ? 13 : 8.5;
+    P.vx = Math.max(-maxV, Math.min(maxV, P.vx));
+    P.vy = Math.max(-maxV, Math.min(maxV, P.vy));
+    P.x = Math.max(P.r, Math.min(W - P.r, P.x + P.vx));
+    P.y = Math.max(90, Math.min(H - 60, P.y + P.vy));
+    P.trail.push({ x: P.x, y: P.y });
+    if (P.trail.length > 16) P.trail.shift();
+
+    speed = Math.min(7.5, speed + 0.0006);
+    if (--nextGate <= 0) { spawnGate(); nextGate = 95 + Math.random()*45; }
+    if (--nextCloud <= 0) { spawnCloud(); nextCloud = 80 + Math.random()*70; }
+
+    for (const g of gates) {
+      g.y += speed + (P.dash > 0 ? 3 : 0);
+      if (!g.passed && g.y > P.y) {
+        g.passed = true;
+        if (Math.abs(P.x - g.cx) < g.gapW/2 - 8) { score += 25; burst(P.x, P.y - 20, '#5df2ff', 12); }
+        else { score += 4; shake = 7; }
+      }
+      // gate posts collision
+      const inBand = Math.abs(g.y - P.y) < P.r + 7;
+      const inGap = Math.abs(P.x - g.cx) < g.gapW/2 - 4;
+      if (inBand && !inGap) hit('gate');
+    }
+    gates = gates.filter(g => g.y < H + 40);
+    for (const c of clouds) {
+      c.y += speed * 0.92; c.x += c.vx + Math.sin(frame*0.02 + c.ph) * 0.4;
+      if (Math.random() < 0.006) c.bolt = 8;
+      if (c.bolt > 0) c.bolt--;
+      const d = Math.hypot(c.x - P.x, c.y - P.y);
+      if (d < c.r + P.r - 8 && P.dash <= 0) hit('cloud');
+      else if (d < c.r + P.r - 8 && P.dash > 0) { score += 15; burst(c.x, c.y, '#c9a7ff', 16); c.y = H + 200; flash = 5; }
+    }
+    clouds = clouds.filter(c => c.y < H + 90);
+    score += 0.12;
+  }
+  for (const s of sparks) { s.x += s.vx; s.y += s.vy; s.vy += 0.05; s.life--; }
+  sparks = sparks.filter(s => s.life > 0);
+  for (const r of rain) { r.y += r.s + speed; r.x -= 2.2; if (r.y > H) { r.y = -20; r.x = Math.random()*(W+80); } }
+  if (shake > 0) shake *= 0.88;
+  if (flash > 0) flash--;
+  best = Math.max(best, Math.floor(score));
+}
+function hit(what) {
+  if (over) return;
+  over = true; overAt = frame; shake = 16; flash = 8;
+  burst(P.x, P.y, what === 'cloud' ? '#ffd94d' : '#ff5d8f', 30);
+}
+
+function cloudShape(c) {
+  ctx.beginPath();
+  ctx.arc(c.x, c.y, c.r, 0, 6.29);
+  ctx.arc(c.x - c.r*0.62, c.y + 5, c.r*0.66, 0, 6.29);
+  ctx.arc(c.x + c.r*0.62, c.y + 5, c.r*0.7, 0, 6.29);
+  ctx.fill();
+}
+
+function draw() {
+  ctx.save();
+  if (shake > 0.4) ctx.translate((Math.random()-0.5)*shake, (Math.random()-0.5)*shake);
+  const bg = ctx.createLinearGradient(0, 0, 0, H);
+  bg.addColorStop(0, '#160a4d'); bg.addColorStop(0.55, '#0a0530'); bg.addColorStop(1, '#05021a');
+  ctx.fillStyle = bg; ctx.fillRect(-20, -20, W+40, H+40);
+  // storm rain
+  ctx.strokeStyle = 'rgba(120,180,255,0.35)'; ctx.lineWidth = 2; ctx.beginPath();
+  for (const r of rain) { ctx.moveTo(r.x, r.y); ctx.lineTo(r.x - 5, r.y + r.s); }
+  ctx.stroke();
+  // gates
+  for (const g of gates) {
+    const lx = g.cx - g.gapW/2, rx = g.cx + g.gapW/2;
+    ctx.shadowColor = `hsl(${g.hue} 100% 65%)`; ctx.shadowBlur = 18;
+    ctx.fillStyle = `hsl(${g.hue} 100% 62%)`;
+    ctx.fillRect(-20, g.y - 7, lx + 20, 14); ctx.fillRect(rx, g.y - 7, W - rx + 20, 14);
+    ctx.shadowBlur = 0;
+    ctx.fillStyle = '#fff';
+    ctx.beginPath(); ctx.arc(lx, g.y, 7, 0, 6.29); ctx.arc(rx, g.y, 7, 0, 6.29); ctx.fill();
+  }
+  // thunderheads
+  for (const c of clouds) {
+    ctx.shadowColor = '#8f7bff'; ctx.shadowBlur = 22;
+    ctx.fillStyle = c.bolt > 0 ? '#e6dcff' : '#4b3a8f';
+    cloudShape(c);
+    ctx.shadowBlur = 0;
+    if (c.bolt > 0) {
+      ctx.strokeStyle = '#ffe95d'; ctx.lineWidth = 4; ctx.beginPath();
+      let bx = c.x, by = c.y + c.r*0.7;
+      ctx.moveTo(bx, by);
+      for (let i = 0; i < 4; i++) { bx += (Math.random()-0.5)*26; by += 20; ctx.lineTo(bx, by); }
+      ctx.stroke();
+    }
+  }
+  // trail + dragonfly
+  for (let i = 0; i < P.trail.length; i++) {
+    const t = P.trail[i], a = i / P.trail.length;
+    ctx.fillStyle = `rgba(93,242,255,${a*0.35})`;
+    ctx.beginPath(); ctx.arc(t.x, t.y, 3 + a*7, 0, 6.29); ctx.fill();
+  }
+  if (!over) {
+    const flap = Math.sin(frame*0.9) * 10;
+    ctx.save(); ctx.translate(P.x, P.y); ctx.rotate(P.vx * 0.03);
+    ctx.fillStyle = 'rgba(160,240,255,0.5)';
+    ctx.beginPath(); ctx.ellipse(-17, -7 - flap*0.3, 17, 6, -0.5, 0, 6.29); ctx.fill();
+    ctx.beginPath(); ctx.ellipse( 17, -7 - flap*0.3, 17, 6,  0.5, 0, 6.29); ctx.fill();
+    ctx.shadowColor = '#5df2ff'; ctx.shadowBlur = 20;
+    ctx.fillStyle = P.dash > 0 ? '#ffd94d' : '#37e0c8';
+    ctx.beginPath(); ctx.ellipse(0, 4, 8, 19, 0, 0, 6.29); ctx.fill();
+    ctx.shadowBlur = 0;
+    ctx.fillStyle = '#eaffff';
+    ctx.beginPath(); ctx.arc(-4.5, -13, 3.4, 0, 6.29); ctx.arc(4.5, -13, 3.4, 0, 6.29); ctx.fill();
+    ctx.restore();
+    if (P.dashCd > 0 && !DEMO) { /* cooldown shown in HUD */ }
+  }
+  // sparks
+  for (const s of sparks) { ctx.fillStyle = s.col; ctx.fillRect(s.x - 2, s.y - 2, 4, 4); }
+  ctx.restore();
+  if (flash > 0) { ctx.fillStyle = `rgba(255,240,180,${flash*0.05})`; ctx.fillRect(0, 0, W, H); }
+  // HUD
+  ctx.fillStyle = 'rgba(4,2,20,0.55)'; ctx.fillRect(0, 0, W, 78);
+  ctx.font = 'bold 30px ui-monospace,monospace'; ctx.fillStyle = '#5df2ff'; ctx.textAlign = 'left';
+  ctx.fillText('SCORE ' + Math.floor(score), 18, 50);
+  ctx.textAlign = 'right'; ctx.fillStyle = P.dashCd <= 0 ? '#ffd94d' : '#7a7396';
+  ctx.font = 'bold 22px ui-monospace,monospace';
+  ctx.fillText(P.dashCd <= 0 ? 'DASH READY' : 'DASH …', W - 18, 48);
+  ctx.textAlign = 'center'; ctx.fillStyle = '#ff5d8f'; ctx.font = 'bold 25px ui-monospace,monospace';
+  ctx.fillText('NEON DRAGONFLY', W/2, 112);
+  ctx.fillStyle = 'rgba(159,216,255,0.9)'; ctx.font = '17px ui-monospace,monospace';
+  ctx.fillText('weave the gates · dodge · dash to score', W/2, 140);
+  if (over) {
+    ctx.fillStyle = 'rgba(4,2,20,0.72)'; ctx.fillRect(0, H/2 - 120, W, 240);
+    ctx.fillStyle = '#ffd94d'; ctx.font = 'bold 44px ui-monospace,monospace'; ctx.textAlign = 'center';
+    ctx.fillText('ZAPPED!', W/2, H/2 - 28);
+    ctx.fillStyle = '#eaffff'; ctx.font = 'bold 27px ui-monospace,monospace';
+    ctx.fillText('SCORE ' + Math.floor(score) + '  ·  BEST ' + best, W/2, H/2 + 26);
+    ctx.font = '21px ui-monospace,monospace'; ctx.fillStyle = '#9fd8ff';
+    ctx.fillText(DEMO ? 'demo restarting…' : 'press R or tap to retry', W/2, H/2 + 70);
+  }
+  if (!DEMO && frame < 300 && !over) {
+    ctx.fillStyle = 'rgba(234,255,255,0.85)'; ctx.font = '19px ui-monospace,monospace'; ctx.textAlign = 'center';
+    ctx.fillText('Arrows / WASD / drag to weave — Space to DASH', W/2, H - 26);
+  }
+}
+addEventListener('keydown', e => { if ((e.key === 'r' || e.key === 'R') && over) reset(); });
+cv.addEventListener('pointerdown', () => { if (over) reset(); });
+
+function loop() { step(); draw(); requestAnimationFrame(loop); }
+reset();
+loop();
+</script>
+</body>
+</html>
